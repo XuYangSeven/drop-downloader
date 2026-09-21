@@ -1,0 +1,6 @@
+downloads/
+.saved-dir
+__pycache__/
+*.pyc
+.venv/
+.DS_Store

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>↓ DROP · 本地视频下载</title>
+<style>
+  :root{
+    --bg:#0e1117; --panel:#12161f; --panel2:#141926; --line:#1f2532; --line2:#232a38;
+    --text:#eef1f7; --sub:#69748a; --faint:#4d566b; --accent:#9cff57; --accent-dark:#18271a;
+    --err:#ff8b96; --err-bg:#2a1518; --err-line:#52242a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Text','PingFang SC',Inter,sans-serif;min-height:100vh}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+
+  /* 顶栏 */
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:36px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;letter-spacing:.04em}
+  .logo .mark{width:34px;height:34px;border-radius:11px;background:var(--accent);color:#0c1108;display:grid;place-items:center;font-size:16px;font-weight:900}
+  .logo small{color:var(--sub);font-weight:500;font-size:10px;letter-spacing:.08em}
+  .env{color:var(--faint);font-size:10px;letter-spacing:.12em}
+
+  /* 输入态 hero */
+  .hero h1{font-size:40px;line-height:1.05;letter-spacing:-.045em;margin:0 0 12px}
+  .hero h1 b{color:var(--accent)}
+  .hero p{color:var(--sub);font-size:14px;margin:0 0 26px}
+  .hero .stats{display:flex;gap:26px;margin-top:30px;color:var(--sub);font-size:11px}
+  .hero .stats b{display:block;color:var(--text);font-size:19px;margin-bottom:4px;font-weight:800}
+
+  /* 输入框 */
+  .inp{display:flex;gap:8px;background:var(--panel2);border:1px solid var(--line2);border-radius:13px;padding:9px}
+  .inp:focus-within{border-color:#3a4356}
+  .inp input{flex:1;background:transparent;border:0;outline:0;color:var(--text);font-size:14px;padding:9px 10px}
+  .inp input::placeholder{color:#4a5468}
+  .btn{background:var(--accent);color:#0c1108;border:0;border-radius:9px;padding:0 20px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
+  .btn:hover{filter:brightness(1.08)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .row{display:flex;gap:10px;margin-top:12px;align-items:center;color:var(--sub);font-size:11px;flex-wrap:wrap}
+  .sel{background:var(--panel2);border:1px solid var(--line2);color:#98a2b8;border-radius:8px;padding:7px 11px;font-size:11px}
+  .hint{color:var(--faint);font-size:11px;margin-top:18px}
+
+  /* 视频卡片 */
+  .card{display:flex;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .card .th{width:210px;height:118px;border-radius:9px;background:linear-gradient(135deg,#26314a,#141b2c);flex:none;display:grid;place-items:center;color:#8fa3c8;font-size:26px;overflow:hidden}
+  .card .th img{width:100%;height:100%;object-fit:cover}
+  .card .bd{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
+  .card h2{margin:0 0 8px;font-size:17px;letter-spacing:-.02em;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .meta{color:var(--sub);font-size:12px;display:flex;gap:14px;flex-wrap:wrap}
+
+  /* 清晰度 */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:16px}
+  .q{border:1px solid #262d3c;background:var(--panel2);border-radius:10px;padding:13px 10px;text-align:center;color:#aab4c8;font-size:13px;font-weight:700;cursor:pointer;transition:.15s}
+  .q small{display:block;color:#5d6678;font-weight:500;font-size:10px;margin-top:4px}
+  .q:hover{border-color:#3a4356}
+  .q.on{border-color:var(--accent);background:var(--accent-dark);color:var(--accent)}
+  .q.on small{color:#7ba94e}
+  .actions{display:flex;gap:10px;margin-top:18px}
+  .ghost{background:transparent;border:1px solid #2a3142;color:#8b94a8;border-radius:10px;padding:11px 18px;font-size:12px;cursor:pointer}
+  .ghost:hover{border-color:#3a4356;color:#aab4c8}
+
+  /* 进度 */
+  .pg-wrap{margin-top:16px}
+  .pg-head{display:flex;justify-content:space-between;color:var(--sub);font-size:11px;margin-bottom:8px}
+  .pg{height:7px;border-radius:99px;background:#1a2030;overflow:hidden}
+  .pg > i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#9cff57,#5fdc6b);transition:width .3s}
+  .log{margin-top:14px;background:#0b0e14;border:1px solid #1a212e;border-radius:11px;padding:12px 14px;color:#5f9c48;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;line-height:1.8;max-height:150px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+
+  /* 完成 / 错误 */
+  .done{margin-top:14px;display:flex;align-items:center;gap:10px;color:var(--accent);font-size:13px;font-weight:700;flex-wrap:wrap}
+  .done .badge{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#0c1108;display:grid;place-items:center;font-size:13px;flex:none}
+  .done .path{color:var(--sub);font-weight:400;font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all}
+  .err{margin-top:14px;background:var(--err-bg);border:1px solid var(--err-line);border-radius:11px;padding:13px 15px;color:var(--err);font-size:12px;line-height:1.7}
+  .err b{display:block;margin-bottom:4px;color:#ffb3bb}
+
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid #2a3142;border-top-color:var(--accent);border-radius:50%;animation:sp 0.7s linear infinite;vertical-align:-2px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* 切换淡入 */
+  .fade{animation:fi .25s ease}
+  @keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+
+  @media(max-width:640px){
+    .hero h1{font-size:30px}
+    .card{flex-direction:column}
+    .card .th{width:100%;height:180px}
+    .grid{grid-template-columns:repeat(2,1fr)}
+    .actions{flex-wrap:wrap}
+    .btn{padding:12px 18px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><div class="mark">↓</div>DROP <small>powered by yt-dlp</small></div>
+    <div class="env">LOCAL · PRIVATE</div>
+  </header>
+
+  <!-- ① 输入 -->
+  <section id="s-input">
+    <div class="hero">
+      <h1>Paste a link.<br><b>Get the video.</b></h1>
+      <p>支持 yt-dlp 兼容的 1000+ 站点 · 视频自动合并音轨 · 全程本地运行</p>
+    </div>
+    <div class="inp">
+      <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=..." autofocus spellcheck="false">
+      <button class="btn" id="btn-parse" onclick="parse()">解析 →</button>
+    </div>
+    <div class="row">
+      <span>保存到</span><span class="sel" id="dl-dir" style="cursor:pointer" title="点击更改保存位置" onclick="pickDir()">…</span>
+      <span style="margin-left:auto">格式 MP4</span>
+    </div>
+    <div class="hint" id="input-hint">回车即可开始解析</div>
+  </section>
+
+  <!-- ② 解析结果 -->
+  <section id="s-parsed" style="display:none">
+    <div class="card fade">
+      <div class="th" id="v-thumb">▶</div>
+      <div class="bd">
+        <h2 id="v-title"></h2>
+        <div class="meta"><span id="v-src"></span><span id="v-dur"></span><span id="v-size"></span></div>
+      </div>
+    </div>
+    <div class="grid" id="quals"></div>
+    <div class="actions">
+      <button class="btn" id="btn-dl" onclick="startDownload()">下载</button>
+      <button class="ghost" onclick="reset()">换一个链接</button>
+    </div>
+  </section>
+
+  <!-- ③④⑤ 下载 / 完成 / 错误 -->
+  <section id="s-task" style="display:none">
+    <div class="card fade">
+      <div class="th" id="t-thumb">▶</div>
+      <div class="bd">
+        <h2 id="t-title"></h2>
+        <div class="meta"><span id="t-info"></span><span id="t-state"></span></div>
+      </div>
+    </div>
+    <div class="pg-wrap" id="t-pgwrap">
+      <div class="pg-head"><span id="t-prog-l"></span><span id="t-prog-r"></span></div>
+      <div class="pg"><i id="t-bar"></i></div>
+    </div>
+    <div class="log" id="t-log" style="display:none"></div>
+    <div class="err" id="t-err" style="display:none"></div>
+    <div class="done" id="t-done" style="display:none"></div>
+    <div class="actions">
+      <button class="btn" id="t-open" style="display:none" onclick="openFolder()">打开所在文件夹</button>
+      <button class="ghost" id="t-cancel" onclick="cancelTask()">取消下载</button>
+      <button class="ghost" id="t-new" style="display:none" onclick="reset()">下载新视频</button>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let info = null;        // 解析结果
+let picked = null;      // 选中的清晰度
+let taskId = null;      // 当前任务
+let pollTimer = null;
+
+function fmtDur(s){
+  if(!s) return '';
+  s = Math.round(s);
+  const h = Math.floor(s/3600), m = Math.floor(s%3600/60), sec = s%60;
+  return (h? h+':':'') + String(m).padStart(h?2:1,'0') + ':' + String(sec).padStart(2,'0');
+}
+function fmtBytes(n){
+  if(!n) return '';
+  const mb = n/1024/1024;
+  return mb >= 1024 ? (mb/1024).toFixed(2)+' GB' : mb >= 1 ? mb.toFixed(1)+' MB' : Math.round(n/1024)+' KB';
+}
+function show(sec){
+  for(const id of ['s-input','s-parsed','s-task']) $(id).style.display = 'none';
+  $(sec).style.display = '';
+}
+
+/* ---------- 输入 → 解析 ---------- */
+$('url').addEventListener('keydown', e => { if(e.key === 'Enter') parse(); });
+
+async function parse(){
+  const url = $('url').value.trim();
+  if(!url){ $('input-hint').textContent = '请先粘贴链接'; return; }
+  $('btn-parse').disabled = true;
+  $('input-hint').innerHTML = '<span class="spin"></span>正在解析，获取视频信息 …';
+  try{
+    const r = await fetch('/api/parse', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
+    const d = await r.json();
+    if(!d.ok){ $('input-hint').innerHTML = ''; throw new Error(d.error || '解析失败'); }
+    info = d;
+    renderParsed();
+    show('s-parsed');
+  }catch(e){
+    $('input-hint').innerHTML = '<span style="color:var(--err)">解析失败：' + (e.message||e) + '</span>';
+  }finally{
+    $('btn-parse').disabled = false;
+  }
+}
+
+function renderParsed(){
+  $('v-title').textContent = info.title;
+  $('v-src').textContent = [info.extractor, info.uploader].filter(Boolean).join(' · ');
+  $('v-dur').textContent = fmtDur(info.duration);
+  const best = info.qualities[0];
+  $('v-size').textContent = best && best.size ? '预计 ~' + best.size : '';
+  const th = $('v-thumb');
+  if(info.thumbnail){
+    th.innerHTML = '<img src="/api/thumb?url=' + encodeURIComponent(info.thumbnail) + '" onerror="this.remove()">';
+  }
+
+  const grid = $('quals');
+  grid.innerHTML = '';
+  info.qualities.forEach((q, i) => {
+    const d = document.createElement('div');
+    d.className = 'q' + (i === 0 ? ' on' : '');
+    d.innerHTML = q.label + '<small>' + (q.size ? '~' + q.size : '') + (i === 0 ? ' · 推荐' : '') + '</small>';
+    d.onclick = () => {
+      grid.querySelectorAll('.q').forEach(x => x.classList.remove('on'));
+      d.classList.add('on');
+      picked = q;
+      $('btn-dl').textContent = '下载 ' + q.label;
+    };
+    grid.appendChild(d);
+  });
+  picked = info.qualities[0];
+  $('btn-dl').textContent = '下载 ' + picked.label;
+}
+
+/* ---------- 开始下载 ---------- */
+async function startDownload(){
+  const r = await fetch('/api/download', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url: $('url').value.trim(), height: picked.height})});
+  const d = await r.json();
+  taskId = d.task_id;
+
+  $('t-title').textContent = info.title;
+  $('t-info').textContent = picked.label + ' · MP4';
+  $('t-thumb').innerHTML = $('v-thumb').innerHTML;
+  $('t-pgwrap').style.display = '';
+  $('t-err').style.display = 'none';
+  $('t-done').style.display = 'none';
+  $('t-log').style.display = 'none';
+  $('t-open').style.display = 'none';
+  $('t-new').style.display = 'none';
+  $('t-cancel').style.display = '';
+  $('t-state').textContent = '排队中';
+  $('t-bar').style.width = '0%';
+  show('s-task');
+  pollTimer = setInterval(poll, 800);
+}
+
+async function poll(){
+  if(!taskId) return;
+  try{
+    const r = await fetch('/api/tasks/' + taskId);
+    const t = await r.json();
+    const st = {downloading:'下载中', merging:'合并音轨中', finished:'已完成', error:'失败', canceled:'已取消', pending:'排队中'}[t.status] || t.status;
+
+    $('t-state').textContent = st;
+    $('t-bar').style.width = Math.min(100, t.progress) + '%';
+    $('t-prog-l').textContent = (t.status === 'downloading' && t.total)
+      ? '下载中 · ' + fmtBytes(t.downloaded) + ' / ' + fmtBytes(t.total) : st;
+    $('t-prog-r').textContent = [t.speed, t.eta && '剩余 ' + t.eta].filter(Boolean).join(' · ');
+
+    if(t.log && t.log.length){
+      $('t-log').style.display = '';
+      $('t-log').textContent = t.log.join('\n');
+      $('t-log').scrollTop = $('t-log').scrollHeight;
+    }
+
+    if(t.status === 'finished'){
+      clearInterval(pollTimer); pollTimer = null;
+      $('t-pgwrap').style.display = 'none';
+      $('t-done').style.display = '';
+      $('t-done').innerHTML = '<div class="badge">✓</div>已保存 <span class="path">' +
+        (downloadDirHtml + '/' + (t.filename || '')) + '</span>';
+      $('t-open').style.display = '';
+      $('t-new').style.display = '';
+      $('t-cancel').style.display = 'none';
+    }else if(t.status === 'error' || t.status === 'canceled'){
+      clearInterval(pollTimer); pollTimer = null;
+      $('t-pgwrap').style.display = 'none';
+      if(t.status === 'error'){
+        $('t-err').style.display = '';
+        $('t-err').innerHTML = '<b>下载失败</b>' + (t.error || '未知错误');
+      }
+      $('t-new').style.display = '';
+      $('t-cancel').style.display = 'none';
+    }
+  }catch(e){ /* 网络抖动时下轮重试 */ }
+}
+
+let downloadDirHtml = '';
+async function cancelTask(){
+  if(taskId) await fetch('/api/tasks/' + taskId + '/cancel', {method:'POST'});
+}
+function openFolder(){ fetch('/api/open-folder'); }
+
+async function pickDir(){
+  const r = await (await fetch('/api/pick-dir', {method:'POST'})).json();
+  if(r.ok && r.dir){ $('dl-dir').textContent = r.dir; }
+}
+
+function reset(){
+  if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+  taskId = null; info = null; picked = null;
+  $('url').value = '';
+  $('input-hint').textContent = '回车即可开始解析';
+  show('s-input');
+  $('url').focus();
+}
+
+/* 初始化 */
+(async () => {
+  try{
+    const d = await (await fetch('/api/download-dir')).json();
+    $('dl-dir').textContent = d.dir;
+    downloadDirHtml = d.dir;
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
