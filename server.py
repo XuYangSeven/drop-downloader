@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
-"""DROP — 本地视频下载网页工具, 基于 yt-dlp Python API.
+"""DROP — 本地/云端视频下载网页工具, 基于 yt-dlp Python API.
 
-用法: python server.py   然后访问 http://127.0.0.1:8777
+本地用法: python server.py   然后访问 http://127.0.0.1:8777
+云端部署: 见 README (Hugging Face Spaces / 任意 Docker 主机)
+
+环境变量:
+  DROP_PASSWORD  访问密码 (设置后所有 API 需带 token; 不设置则无密码, 仅建议本地使用)
+  DROP_DIR       下载目录 (默认 ./downloads)
+  DROP_MAX_MB    单文件大小上限 MB (默认 0 不限制; 云端建议 500)
 """
 
 import os
 import re
+import secrets
 import subprocess
 import threading
 import uuid
 from collections import deque
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -20,9 +27,19 @@ from pydantic import BaseModel
 import yt_dlp
 
 BASE_DIR = Path(__file__).resolve().parent
-DOWNLOAD_DIR = Path(os.environ.get('DROPLY_DIR') or (BASE_DIR / 'downloads')).expanduser()
+DOWNLOAD_DIR = Path(os.environ.get('DROP_DIR') or (BASE_DIR / 'downloads')).expanduser()
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-CONFIG_FILE = BASE_DIR / '.saved-dir'  # 记住上次选择的保存目录
+CONFIG_FILE = BASE_DIR / '.saved-dir'
+
+PASSWORD = os.environ.get('DROP_PASSWORD', '').strip()  # 空 = 无密码模式
+MAX_MB = int(os.environ.get('DROP_MAX_MB') or 0)
+
+app = FastAPI(title='DROP')
+
+
+# ---------------------------------------------------------------- 访问控制
+
+SESSIONS: dict[str, float] = {}  # token -> 过期时间戳
 
 
 def load_saved_dir():
@@ -37,9 +54,27 @@ def load_saved_dir():
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-load_saved_dir()
+def require_auth(request: Request):
+    """云部署密码校验; 本地无密码模式直接放行."""
+    if not PASSWORD:
+        return
+    token = request.headers.get('X-Drop-Token', '')
+    if not token or not SESSIONS.get(token):
+        raise HTTPException(401, '未登录或登录已过期')
 
-app = FastAPI(title='DROP')
+
+@app.post('/api/login')
+def login(body: dict):
+    if not PASSWORD:
+        return {'ok': True, 'token': ''}
+    if not secrets.compare_digest(str(body.get('password', '')), PASSWORD):
+        return JSONResponse({'ok': False, 'error': '密码错误'}, 401)
+    token = secrets.token_hex(16)
+    SESSIONS[token] = float('inf')
+    return {'ok': True, 'token': token}
+
+
+load_saved_dir()
 
 # ---------------------------------------------------------------- 任务存储
 
@@ -107,7 +142,8 @@ def extract_url(text: str) -> str:
 
 
 @app.post('/api/parse')
-def parse(req: ParseReq):
+def parse(req: ParseReq, request: Request):
+    require_auth(request)
     url = extract_url(req.url)
     if not url:
         raise HTTPException(400, '链接为空')
@@ -201,6 +237,7 @@ def run_download(task_id: str, url: str, height: int):
     opts = {
         'outtmpl': str(DOWNLOAD_DIR / '%(title).80s [%(id)s].%(ext)s'),
         'format': f'bv*[height<={height}]+ba/b[height<={height}]',
+        'max_filesize': MAX_MB * 1024 * 1024 if MAX_MB else None,
         'merge_output_format': 'mp4',
         'noplaylist': True,
         'quiet': True,
@@ -216,7 +253,6 @@ def run_download(task_id: str, url: str, height: int):
         if raw:
             name = ydl.prepare_filename(raw)
             task['filename'] = os.path.basename(name)
-            # merge 后实际文件为 mp4
             base = re.sub(r'\.\w+$', '.mp4', task['filename'])
             if (DOWNLOAD_DIR / base).exists():
                 task['filename'] = base
@@ -233,7 +269,8 @@ def run_download(task_id: str, url: str, height: int):
 
 
 @app.post('/api/download')
-def download(req: DownloadReq):
+def download(req: DownloadReq, request: Request):
+    require_auth(request)
     url = extract_url(req.url)
     if not url:
         raise HTTPException(400, '链接为空')
@@ -244,7 +281,8 @@ def download(req: DownloadReq):
 
 
 @app.get('/api/tasks/{task_id}')
-def task_status(task_id: str):
+def task_status(task_id: str, request: Request):
+    require_auth(request)
     task = TASKS.get(task_id)
     if not task:
         raise HTTPException(404, '任务不存在')
@@ -263,7 +301,8 @@ def task_status(task_id: str):
 
 
 @app.post('/api/tasks/{task_id}/cancel')
-def cancel_task(task_id: str):
+def cancel_task(task_id: str, request: Request):
+    require_auth(request)
     task = TASKS.get(task_id)
     if not task:
         raise HTTPException(404, '任务不存在')
@@ -272,13 +311,15 @@ def cancel_task(task_id: str):
 
 
 @app.get('/api/download-dir')
-def download_dir():
+def download_dir(request: Request):
+    require_auth(request)
     return {'dir': str(DOWNLOAD_DIR)}
 
 
 @app.post('/api/pick-dir')
-def pick_dir():
+def pick_dir(request: Request):
     """弹出 macOS 原生目录选择框, 选择后持久化并立即生效."""
+    require_auth(request)
     global DOWNLOAD_DIR
     script = (
         'set chosen to choose folder with prompt "选择视频保存位置"\n'
@@ -304,14 +345,33 @@ def pick_dir():
 
 
 @app.get('/api/open-folder')
-def open_folder():
+def open_folder(request: Request):
+    require_auth(request)
     subprocess.Popen(['open', str(DOWNLOAD_DIR)])
     return {'ok': True}
 
 
+@app.get('/api/file/{task_id}')
+def get_file(task_id: str, request: Request, token: str = ''):
+    """下载完成后取走文件 (手机/远程场景: 浏览器直接保存)."""
+    # <a> 直链无法带自定义 header, 允许 query token
+    if PASSWORD:
+        t = token or request.headers.get('X-Drop-Token', '')
+        if not t or not SESSIONS.get(t):
+            raise HTTPException(401, '未登录或登录已过期')
+    task = TASKS.get(task_id)
+    if not task or task['status'] != 'finished' or not task['filename']:
+        raise HTTPException(404, '文件不存在')
+    path = DOWNLOAD_DIR / task['filename']
+    if not path.exists():
+        raise HTTPException(404, '文件已被清理')
+    return FileResponse(path, filename=task['filename'])
+
+
 @app.get('/api/thumb')
-def thumb(url: str):
+def thumb(url: str, request: Request):
     """代理缩略图, 避免混合内容/防盗链问题."""
+    require_auth(request)
     import urllib.request
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     with urllib.request.urlopen(req, timeout=10) as r:
@@ -324,6 +384,9 @@ app.mount('/', StaticFiles(directory=str(BASE_DIR / 'static'), html=True), name=
 
 if __name__ == '__main__':
     import uvicorn
+    host = os.environ.get('DROP_HOST', '127.0.0.1')
+    port = int(os.environ.get('DROP_PORT') or 8777)
     print(f'Download dir: {DOWNLOAD_DIR}')
-    print('Open http://127.0.0.1:8777')
-    uvicorn.run(app, host='127.0.0.1', port=8777, log_level='warning')
+    print(f'Auth: {"password ON" if PASSWORD else "OFF (local mode)"}')
+    print(f'Open http://{host}:{port}')
+    uvicorn.run(app, host=host, port=port, log_level='warning')
