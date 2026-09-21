@@ -26,7 +26,7 @@ brew install ffmpeg
 ### 安装与运行
 
 ```bash
-git clone https://github.com/<你的用户名>/drop-downloader.git
+git clone https://github.com/XuYangSeven/drop-downloader.git
 cd drop-downloader
 pip install -r requirements.txt
 python server.py
