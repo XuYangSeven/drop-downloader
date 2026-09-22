@@ -385,7 +385,10 @@ app.mount('/', StaticFiles(directory=str(BASE_DIR / 'static'), html=True), name=
 if __name__ == '__main__':
     import uvicorn
     host = os.environ.get('DROP_HOST', '127.0.0.1')
-    port = int(os.environ.get('DROP_PORT') or 8777)
+    # 平台自适应: 优先 DROP_PORT, 其次云平台注入的 PORT (Render/Koyeb 等)
+    port = int(os.environ.get('DROP_PORT') or os.environ.get('PORT') or 8777)
+    if os.environ.get('RENDER'):  # Render 等平台必须监听 0.0.0.0
+        host = '0.0.0.0'
     print(f'Download dir: {DOWNLOAD_DIR}')
     print(f'Auth: {"password ON" if PASSWORD else "OFF (local mode)"}')
     print(f'Open http://{host}:{port}')

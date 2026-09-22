@@ -14,8 +14,8 @@ COPY static ./static
 # 环境变量在运行平台设置:
 #   DROP_PASSWORD  访问密码 (必设! 否则任何人可用你的服务)
 #   DROP_MAX_MB    单文件上限 MB (建议 500)
+# 平台兼容: 端口自动适配 PORT 环境变量 (Render/Koyeb), 默认 7860
 ENV DROP_DIR=/data/downloads \
-    DROP_HOST=0.0.0.0 \
     DROP_PORT=7860
 
 VOLUME /data
