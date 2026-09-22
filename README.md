@@ -2,6 +2,8 @@
 
 基于 [yt-dlp](https://github.com/yt-dlp/yt-dlp) Python API 的本地网页下载工具：粘贴链接 → 选清晰度 → 下载合并 MP4。全程本地运行，无广告、无追踪。
 
+> 📄 完整产品设计文档见 [docs/PRD.md](docs/PRD.md)——从用户痛点到产品边界的完整思考。
+
 ## 特性
 
 - 🔗 **粘贴即用**：支持直接粘贴 URL 或 App 分享全文（自动提取链接）
